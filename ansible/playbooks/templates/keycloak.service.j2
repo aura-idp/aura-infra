@@ -1,0 +1,18 @@
+[Unit]
+Description=Keycloak Identity and Access Management
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User={{ keycloak_user }}
+Group={{ keycloak_user }}
+EnvironmentFile=/etc/default/keycloak
+ExecStart=/opt/keycloak/bin/kc.sh start --optimized
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

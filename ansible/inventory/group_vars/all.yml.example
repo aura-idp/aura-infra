@@ -1,0 +1,28 @@
+---
+# Внешние URL. Для стенда без DNS используются публичные IP из inventory.
+gitlab_external_url: "http://{{ hostvars[groups['gitlab'][0]].ansible_host }}"
+gitlab_runner_url: "{{ gitlab_external_url }}"
+
+# Authentication token создаётся в GitLab: Admin Area -> CI/CD -> Runners.
+# Пустое значение устанавливает Runner, но не регистрирует его.
+gitlab_runner_token: ""
+
+nexus_version: "3.93.0-06"
+keycloak_version: "26.6.3"
+keycloak_hostname: "{{ hostvars[groups['keycloak'][0]].ansible_host }}"
+keycloak_admin_username: "admin"
+keycloak_admin_password: "CHANGE_ME"
+keycloak_db_name: "keycloak"
+keycloak_db_username: "keycloak"
+keycloak_db_password: "CHANGE_ME"
+
+# Aura MVP. Playbook собирает локальный ../aura-sso и копирует статические
+# бинарники на VM Aura. Depth=3 нужен для быстрого smoke-теста; для измерений
+# можно поднять до 12/20, но первый запуск будет заметно дольше.
+aura_sso_repo_path: "{{ playbook_dir }}/../../aura-sso"
+aura_zk_depth: 3
+aura_idp_port: 8443
+aura_idp_issuer_url: "http://{{ hostvars[groups['aura'][0]].ansible_host }}:{{ aura_idp_port }}"
+aura_demo_client_id: "demo-rp"
+aura_demo_client_secret: "CHANGE_ME"
+aura_demo_redirect_uri: "http://localhost:9000/callback"

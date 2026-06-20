@@ -1,0 +1,17 @@
+[Unit]
+Description=Sonatype Nexus Repository
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ nexus_user }}
+Group={{ nexus_user }}
+LimitNOFILE=65536
+ExecStart=/opt/nexus/bin/nexus run
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

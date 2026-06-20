@@ -1,0 +1,29 @@
+all:
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+  children:
+    gitlab:
+      hosts:
+        Gitlab:
+          ansible_host: 203.0.113.10
+    gitlab_runner:
+      hosts:
+        Gitlab-runner:
+          ansible_host: 203.0.113.11
+    nexus:
+      hosts:
+        Nexus:
+          ansible_host: 203.0.113.12
+    aura:
+      hosts:
+        Aura:
+          ansible_host: 203.0.113.13
+    keycloak:
+      hosts:
+        Keycloak:
+          ansible_host: 203.0.113.14
+    vault:
+      hosts:
+        Vault:
+          ansible_host: 203.0.113.15

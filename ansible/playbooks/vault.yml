@@ -1,0 +1,111 @@
+---
+- name: Install HashiCorp Vault
+  hosts: vault
+  become: true
+  vars:
+    vault_version: "1.21.4"
+    vault_user: vault
+    vault_download_url: >-
+      https://mirror.yandex.ru/mirrors/releases.hashicorp.com/vault/1.21.4/vault_1.21.4_linux_amd64.zip
+    vault_checksum_url: >-
+      https://mirror.yandex.ru/mirrors/releases.hashicorp.com/vault/1.21.4/vault_1.21.4_SHA256SUMS
+    vault_install_dir: "/opt/vault/{{ vault_version }}"
+
+  pre_tasks:
+    - name: Prepare host
+      ansible.builtin.import_tasks: tasks/common.yml
+
+  tasks:
+    - name: Install Vault archive dependency
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+
+    - name: Create Vault system user
+      ansible.builtin.user:
+        name: "{{ vault_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: /opt/vault
+        create_home: false
+
+    - name: Create Vault directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ vault_install_dir }}"
+          owner: root
+          group: root
+          mode: "0755"
+        - path: /opt/vault/data
+          owner: "{{ vault_user }}"
+          group: "{{ vault_user }}"
+          mode: "0750"
+        - path: /etc/vault.d
+          owner: root
+          group: "{{ vault_user }}"
+          mode: "0750"
+
+    - name: Download Vault binary archive
+      ansible.builtin.get_url:
+        url: "{{ vault_download_url }}"
+        dest: "/var/tmp/vault_{{ vault_version }}_linux_amd64.zip"
+        checksum: "sha256:{{ vault_checksum_url }}"
+        mode: "0644"
+
+    - name: Extract Vault binary
+      ansible.builtin.unarchive:
+        src: "/var/tmp/vault_{{ vault_version }}_linux_amd64.zip"
+        dest: "{{ vault_install_dir }}"
+        remote_src: true
+        creates: "{{ vault_install_dir }}/vault"
+
+    - name: Point /usr/local/bin/vault to the selected version
+      ansible.builtin.file:
+        src: "{{ vault_install_dir }}/vault"
+        dest: /usr/local/bin/vault
+        state: link
+        force: true
+      notify: Restart Vault
+
+    - name: Configure Vault
+      ansible.builtin.template:
+        src: templates/vault.hcl.j2
+        dest: /etc/vault.d/vault.hcl
+        owner: root
+        group: "{{ vault_user }}"
+        mode: "0640"
+        validate: /usr/local/bin/vault server -config=%s -verify-only
+      notify: Restart Vault
+
+    - name: Install Vault systemd unit
+      ansible.builtin.template:
+        src: templates/vault.service.j2
+        dest: /etc/systemd/system/vault.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart Vault
+
+    - name: Enable and start Vault
+      ansible.builtin.systemd_service:
+        name: vault
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart Vault
+      ansible.builtin.systemd_service:
+        name: vault
+        state: restarted

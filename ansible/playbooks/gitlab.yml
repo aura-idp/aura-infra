@@ -1,0 +1,50 @@
+---
+- name: Install GitLab CE
+  hosts: gitlab
+  become: true
+
+  pre_tasks:
+    - name: Prepare host
+      ansible.builtin.import_tasks: tasks/common.yml
+
+  tasks:
+    - name: Install GitLab package dependencies
+      ansible.builtin.apt:
+        name:
+          - openssh-server
+          - postfix
+          - tzdata
+        state: present
+
+    - name: Download official GitLab CE repository setup script
+      ansible.builtin.get_url:
+        url: https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh
+        dest: /usr/local/src/gitlab-ce-repository.sh
+        mode: "0755"
+
+    - name: Configure official GitLab CE APT repository
+      ansible.builtin.command: /usr/local/src/gitlab-ce-repository.sh
+      args:
+        creates: /etc/apt/sources.list.d/gitlab_gitlab-ce.list
+
+    - name: Install GitLab CE native package
+      ansible.builtin.apt:
+        name: gitlab-ce
+        state: present
+        update_cache: true
+      environment:
+        EXTERNAL_URL: "{{ gitlab_external_url }}"
+
+    - name: Configure GitLab external URL
+      ansible.builtin.template:
+        src: templates/gitlab.rb.j2
+        dest: /etc/gitlab/gitlab.rb
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Reconfigure GitLab
+
+  handlers:
+    - name: Reconfigure GitLab
+      ansible.builtin.command: gitlab-ctl reconfigure
+      changed_when: true

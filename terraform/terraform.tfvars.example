@@ -1,0 +1,13 @@
+region              = "ru-9"
+availability_zone   = "ru-9a"
+image_name          = "Ubuntu 24.04 LTS 64-bit"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+vm_flavors = {
+  Gitlab        = "SL1.2-8192-64"
+  Gitlab-runner = "SL1.1-2048-16"
+  Nexus         = "SL1.2-8192-64"
+  Aura          = "SL1.1-2048-16"
+  Keycloak      = "SL1.2-4096-32"
+  Vault         = "SL1.1-2048-16"
+}

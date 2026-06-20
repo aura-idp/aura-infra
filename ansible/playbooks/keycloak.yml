@@ -1,0 +1,164 @@
+---
+- name: Install Keycloak and PostgreSQL
+  hosts: keycloak
+  become: true
+  vars:
+    keycloak_user: keycloak
+    keycloak_effective_version: "{{ keycloak_version | default('26.6.3') }}"
+    keycloak_install_dir: "/opt/keycloak-{{ keycloak_effective_version }}"
+    keycloak_download_url: >-
+      https://github.com/keycloak/keycloak/releases/download/{{ keycloak_effective_version }}/keycloak-{{ keycloak_effective_version }}.tar.gz
+    keycloak_checksum_url: "{{ keycloak_download_url }}.sha1"
+
+  pre_tasks:
+    - name: Prepare host
+      ansible.builtin.import_tasks: tasks/common.yml
+
+  tasks:
+    - name: Validate Keycloak secrets
+      ansible.builtin.assert:
+        that:
+          - keycloak_admin_password != 'CHANGE_ME'
+          - keycloak_db_password != 'CHANGE_ME'
+          - keycloak_admin_password | length >= 12
+          - keycloak_db_password | length >= 12
+        fail_msg: Set non-default Keycloak passwords in inventory/group_vars/all.yml.
+      no_log: true
+
+    - name: Install Keycloak native dependencies
+      ansible.builtin.apt:
+        name:
+          - openjdk-21-jre-headless
+          - postgresql
+          - python3-psycopg2
+        state: present
+
+    - name: Enable and start PostgreSQL
+      ansible.builtin.systemd_service:
+        name: postgresql
+        enabled: true
+        state: started
+
+    - name: Create Keycloak PostgreSQL user
+      community.postgresql.postgresql_user:
+        name: "{{ keycloak_db_username }}"
+        password: "{{ keycloak_db_password }}"
+      become: true
+      become_user: postgres
+      no_log: true
+
+    - name: Create Keycloak PostgreSQL database
+      community.postgresql.postgresql_db:
+        name: "{{ keycloak_db_name }}"
+        owner: "{{ keycloak_db_username }}"
+        encoding: UTF8
+      become: true
+      become_user: postgres
+
+    - name: Create Keycloak system user
+      ansible.builtin.user:
+        name: "{{ keycloak_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: /opt/keycloak
+        create_home: false
+
+    - name: Download Keycloak archive
+      ansible.builtin.get_url:
+        url: "{{ keycloak_download_url }}"
+        dest: "/var/tmp/keycloak-{{ keycloak_effective_version }}.tar.gz"
+        checksum: "sha1:{{ keycloak_checksum_url }}"
+        mode: "0644"
+
+    - name: Extract Keycloak
+      ansible.builtin.unarchive:
+        src: "/var/tmp/keycloak-{{ keycloak_effective_version }}.tar.gz"
+        dest: /opt
+        remote_src: true
+        creates: "{{ keycloak_install_dir }}/bin/kc.sh"
+
+    - name: Set Keycloak installation ownership
+      ansible.builtin.file:
+        path: "{{ keycloak_install_dir }}"
+        state: directory
+        owner: "{{ keycloak_user }}"
+        group: "{{ keycloak_user }}"
+        recurse: true
+
+    - name: Point /opt/keycloak to the selected version
+      ansible.builtin.file:
+        src: "{{ keycloak_install_dir }}"
+        dest: /opt/keycloak
+        state: link
+        force: true
+      notify: Restart Keycloak
+
+    - name: Configure Keycloak
+      ansible.builtin.template:
+        src: templates/keycloak.conf.j2
+        dest: /opt/keycloak/conf/keycloak.conf
+        owner: "{{ keycloak_user }}"
+        group: "{{ keycloak_user }}"
+        mode: "0640"
+      no_log: true
+      notify: Restart Keycloak
+
+    - name: Configure initial Keycloak administrator
+      ansible.builtin.template:
+        src: templates/keycloak.env.j2
+        dest: /etc/default/keycloak
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart Keycloak
+
+    - name: Check whether Keycloak is optimized
+      ansible.builtin.stat:
+        path: "{{ keycloak_install_dir }}/.ansible-built"
+      register: keycloak_built
+
+    - name: Build optimized Keycloak distribution
+      when: not keycloak_built.stat.exists
+      block:
+        - name: Run Keycloak build
+          ansible.builtin.command: /opt/keycloak/bin/kc.sh build
+          become: true
+          become_user: "{{ keycloak_user }}"
+          changed_when: true
+
+        - name: Record successful Keycloak build
+          ansible.builtin.file:
+            path: "{{ keycloak_install_dir }}/.ansible-built"
+            state: touch
+            owner: "{{ keycloak_user }}"
+            group: "{{ keycloak_user }}"
+            mode: "0644"
+
+    - name: Install Keycloak systemd unit
+      ansible.builtin.template:
+        src: templates/keycloak.service.j2
+        dest: /etc/systemd/system/keycloak.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart Keycloak
+
+    - name: Enable and start Keycloak
+      ansible.builtin.systemd_service:
+        name: keycloak
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart Keycloak
+      ansible.builtin.systemd_service:
+        name: keycloak
+        state: restarted

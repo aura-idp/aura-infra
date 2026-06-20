@@ -1,0 +1,21 @@
+[Unit]
+Description=Aura MVP IdP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ aura_user }}
+Group={{ aura_group }}
+EnvironmentFile=/etc/aura/idp.env
+ExecStart={{ aura_bin_dir }}/aura-idp
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ aura_home }}
+
+[Install]
+WantedBy=multi-user.target

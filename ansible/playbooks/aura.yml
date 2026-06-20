@@ -1,0 +1,127 @@
+---
+- name: Deploy Aura MVP
+  hosts: aura
+  become: true
+  vars:
+    aura_user: aura
+    aura_group: aura
+    aura_home: /var/lib/aura
+    aura_bin_dir: /usr/local/bin
+    aura_zk_dir: /var/lib/aura/zk
+
+  pre_tasks:
+    - name: Prepare host
+      ansible.builtin.import_tasks: tasks/common.yml
+
+    - name: Build Aura binaries locally
+      ansible.builtin.command:
+        cmd: make build
+        chdir: "{{ aura_sso_repo_path }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      changed_when: true
+
+  tasks:
+    - name: Create Aura group
+      ansible.builtin.group:
+        name: "{{ aura_group }}"
+        system: true
+
+    - name: Create Aura user
+      ansible.builtin.user:
+        name: "{{ aura_user }}"
+        group: "{{ aura_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ aura_home }}"
+        create_home: true
+
+    - name: Create Aura directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ aura_home }}"
+          owner: "{{ aura_user }}"
+          group: "{{ aura_group }}"
+          mode: "0750"
+        - path: "{{ aura_zk_dir }}"
+          owner: "{{ aura_user }}"
+          group: "{{ aura_group }}"
+          mode: "0750"
+        - path: /etc/aura
+          owner: root
+          group: "{{ aura_group }}"
+          mode: "0750"
+
+    - name: Install Aura binaries
+      ansible.builtin.copy:
+        src: "{{ aura_sso_repo_path }}/bin/{{ item }}"
+        dest: "{{ aura_bin_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - aura-idp
+        - aura-issuer
+        - aura-wallet
+      notify: Restart Aura IdP
+
+    - name: Generate or reuse Aura ZK artifacts
+      ansible.builtin.command:
+        cmd: >-
+          {{ aura_bin_dir }}/aura-issuer
+          -dir {{ aura_zk_dir }}
+          -depth {{ aura_zk_depth }}
+          -reuse
+      become_user: "{{ aura_user }}"
+      register: aura_issuer_result
+      changed_when: "'done. artifacts' in aura_issuer_result.stderr"
+
+    - name: Install Aura IdP environment
+      ansible.builtin.template:
+        src: templates/aura-idp.env.j2
+        dest: /etc/aura/idp.env
+        owner: root
+        group: "{{ aura_group }}"
+        mode: "0640"
+      notify: Restart Aura IdP
+
+    - name: Install Aura IdP systemd unit
+      ansible.builtin.template:
+        src: templates/aura-idp.service.j2
+        dest: /etc/systemd/system/aura-idp.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart Aura IdP
+
+    - name: Enable and start Aura IdP
+      ansible.builtin.systemd_service:
+        name: aura-idp
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Check Aura health endpoint
+      ansible.builtin.command:
+        cmd: "{{ aura_bin_dir }}/aura-idp healthcheck"
+      environment:
+        AURA_IDP_LISTEN: ":{{ aura_idp_port }}"
+      changed_when: false
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart Aura IdP
+      ansible.builtin.systemd_service:
+        name: aura-idp
+        state: restarted

@@ -1,0 +1,4 @@
+external_url '{{ gitlab_external_url }}'
+
+# Небольшой стенд: отключаем встроенные метрики для снижения потребления RAM.
+prometheus_monitoring['enable'] = false

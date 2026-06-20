@@ -1,0 +1,5 @@
+.ansible/
+inventory/hosts.yml
+inventory/group_vars/all.yml
+*.retry
+.vault_password

@@ -1,0 +1,104 @@
+---
+- name: Install Nexus Repository
+  hosts: nexus
+  become: true
+  vars:
+    nexus_user: nexus
+    nexus_effective_version: "{{ nexus_version | default('3.93.0-06') }}"
+    nexus_install_dir: "/opt/nexus-{{ nexus_effective_version }}"
+    nexus_download_url: >-
+      https://download.sonatype.com/nexus/3/nexus-{{ nexus_effective_version }}-linux-x86_64.tar.gz
+    nexus_checksum_url: "{{ nexus_download_url }}.sha256"
+
+  pre_tasks:
+    - name: Prepare host
+      ansible.builtin.import_tasks: tasks/common.yml
+
+  tasks:
+    - name: Create Nexus system user
+      ansible.builtin.user:
+        name: "{{ nexus_user }}"
+        system: true
+        shell: /bin/bash
+        home: /opt/sonatype-work
+        create_home: false
+
+    - name: Download Nexus Repository archive
+      ansible.builtin.get_url:
+        url: "{{ nexus_download_url }}"
+        dest: "/var/tmp/nexus-{{ nexus_effective_version }}.tar.gz"
+        checksum: "sha256:{{ nexus_checksum_url }}"
+        mode: "0644"
+
+    - name: Extract Nexus Repository
+      ansible.builtin.unarchive:
+        src: "/var/tmp/nexus-{{ nexus_effective_version }}.tar.gz"
+        dest: /opt
+        remote_src: true
+        creates: "{{ nexus_install_dir }}/bin/nexus"
+
+    - name: Create Nexus data directory
+      ansible.builtin.file:
+        path: /opt/sonatype-work/nexus3
+        state: directory
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_user }}"
+        mode: "0750"
+
+    - name: Set Nexus installation ownership
+      ansible.builtin.file:
+        path: "{{ nexus_install_dir }}"
+        state: directory
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_user }}"
+        recurse: true
+
+    - name: Point /opt/nexus to the selected version
+      ansible.builtin.file:
+        src: "{{ nexus_install_dir }}"
+        dest: /opt/nexus
+        state: link
+        force: true
+      notify: Restart Nexus
+
+    - name: Configure Nexus heap size
+      ansible.builtin.lineinfile:
+        path: /opt/nexus/bin/nexus.vmoptions
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - regexp: "^-Xms"
+          line: "-Xms1024m"
+        - regexp: "^-Xmx"
+          line: "-Xmx1024m"
+        - regexp: "^-XX:MaxDirectMemorySize="
+          line: "-XX:MaxDirectMemorySize=512m"
+      notify: Restart Nexus
+
+    - name: Install Nexus systemd unit
+      ansible.builtin.template:
+        src: templates/nexus.service.j2
+        dest: /etc/systemd/system/nexus.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart Nexus
+
+    - name: Enable and start Nexus
+      ansible.builtin.systemd_service:
+        name: nexus
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart Nexus
+      ansible.builtin.systemd_service:
+        name: nexus
+        state: restarted
