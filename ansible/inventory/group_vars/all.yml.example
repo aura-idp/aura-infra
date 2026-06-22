@@ -19,7 +19,7 @@ keycloak_db_password: "CHANGE_ME"
 # Aura MVP. Playbook собирает локальный ../aura-sso и копирует статические
 # бинарники на VM Aura. Depth=3 нужен для быстрого smoke-теста; для измерений
 # можно поднять до 12/20, но первый запуск будет заметно дольше.
-aura_sso_repo_path: "{{ playbook_dir }}/../../aura-sso"
+aura_sso_repo_path: "{{ playbook_dir }}/../../../aura-sso"
 aura_zk_depth: 3
 aura_idp_port: 8443
 aura_idp_issuer_url: "http://{{ hostvars[groups['aura'][0]].ansible_host }}:{{ aura_idp_port }}"
